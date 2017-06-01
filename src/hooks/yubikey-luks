@@ -1,0 +1,85 @@
+#!/usr/bin/bash
+
+run_hook() {
+    local timeout=15
+    local keyslot=2
+    local discard
+
+    local success=0
+
+    . /etc/yubikey-luks.conf
+
+    if [ -n "$YKL_TIMEOUT" ]; then
+        timeout=$YKL_TIMEOUT
+    fi
+
+    if [ -n "$YKL_KEY_SLOT" ]; then
+        keyslot=$YKL_KEY_SLOT
+    fi
+
+    if [ -n "$YKL_ALLOW_DISCARDS" ] && [ $YKL_ALLOW_DISCARDS == 1 ]; then
+        discard="--allow-discards"
+    fi
+
+    udevadm settle
+    modprobe -a -q dm-crypt >/dev/null 2>&1
+
+    echo "$YKL_LUKS_NAME"
+    for i in 1 2 3; do
+        echo -n "enter passphrase, (r)eboot, (p)oweroff, or (k)ey: "
+        if ! read -t $timeout -s prps; then
+            echo -e "\ntimeout, shutting down..."
+            sleep 2
+            poweroff -f
+        fi
+
+        case $prps in
+            "")
+                echo ""
+                ;;
+            r)
+                echo -e "\nrebooting..."
+                sleep 2
+                reboot -f
+                ;;
+            p)
+                echo -e "\nshutting down..."
+                sleep 2
+                poweroff -f
+                ;;
+            k)
+                echo -ne "\n    enter key: "
+                read -s key
+                echo -n "$key" | cryptsetup open --type luks /dev/disk/by-uuid/$YKL_DISK_UUID $YKL_LUKS_NAME $discard - >/dev/null 2>&1
+                if [ $? -eq 0 ]; then
+                    echo -e "\nsuccessful boot"
+                    success=1
+                    break
+                fi
+                echo ""
+                ;;
+            *)
+                key="$(ykchalresp -${keyslot} $prps 2>/dev/null)"
+                if [ $? -eq 0 ]; then
+                    echo -n "$key" | cryptsetup open --type luks /dev/disk/by-uuid/$YKL_DISK_UUID $YKL_LUKS_NAME $discard - >/dev/null 2>&1
+                    if [ $? -eq 0 ]; then
+                        echo -e "\nsuccessful boot"
+                        success=1
+                        break
+                    fi
+                fi
+                echo ""
+                ;;
+        esac
+    done
+
+    if [ $success -eq 0 ]; then
+        echo "unsuccessful boot, shutting down..."
+        sleep 2
+        poweroff -f
+    fi
+}
+
+run_cleanuphook() {
+    clear
+}

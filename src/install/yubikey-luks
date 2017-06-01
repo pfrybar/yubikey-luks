@@ -1,0 +1,38 @@
+#!/bin/bash
+
+build() {
+    local mod
+
+    . /etc/yubikey-luks.conf
+    if [ -z "$YKL_DISK_UUID" ] || [ -z "$YKL_LUKS_NAME" ]; then
+        error "YKL_DISK_UUID and YKL_LUKS_NAME must be set in /etc/yubikey-luks.conf"
+        exit 1
+    fi
+
+    add_module dm-crypt
+    if [[ $CRYPTO_MODULES ]]; then
+        for mod in $CRYPTO_MODULES; do
+            add_module "$mod"
+        done
+    else
+        add_all_modules '/crypto/'
+    fi
+
+    add_binary "cryptsetup"
+    add_binary "dmsetup"
+    add_file "/usr/lib/udev/rules.d/10-dm.rules"
+    add_file "/usr/lib/udev/rules.d/13-dm-disk.rules"
+    add_file "/usr/lib/udev/rules.d/95-dm-notify.rules"
+    add_file "/usr/lib/initcpio/udev/11-dm-initramfs.rules" "/usr/lib/udev/rules.d/11-dm-initramfs.rules"
+
+    add_binary "ykchalresp"
+    add_file "/etc/yubikey-luks.conf" "/etc/yubikey-luks.conf"
+
+    add_runscript
+}
+
+help() {
+    cat <<HELPEOF
+This allows decrypting a custom device.
+HELPEOF
+}
